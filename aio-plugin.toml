@@ -1,0 +1,11 @@
+[plugin.client]
+path = "client"
+
+[plugin.server]
+path = "server"
+
+[plugin.marketplace]
+title = "字典管理"
+summary = "按租户维护字典类型、字典项、排序、启停和默认值。"
+license = "MIT"
+tags = ["system", "dictionary", "postgresql"]
