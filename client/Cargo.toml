@@ -6,10 +6,11 @@ license.workspace = true
 
 [dependencies]
 aio-plugin-dictionary-model = { path = "../model" }
-az-dioxus-admin-shell = { git = "https://github.com/zjarlin/dioxus-admin-workbench.git", rev = "819ae159ab7dcba65d33d056d528ae8f7ec32ae2" }
-az-ui-components = { git = "https://github.com/zjarlin/dioxus-admin-workbench.git", rev = "819ae159ab7dcba65d33d056d528ae8f7ec32ae2" }
+az-dioxus-admin-shell = { git = "https://github.com/zjarlin/dioxus-admin-workbench.git", rev = "195765a263d2cbb837155e74dd531316994f48af" }
+az-ui-components = { git = "https://github.com/zjarlin/dioxus-admin-workbench.git", rev = "195765a263d2cbb837155e74dd531316994f48af" }
 dill = "0.15.0"
 dioxus = { version = "=0.7.9", default-features = false, features = ["macro", "html", "signals"] }
+dioxus-icons = { version = "0.1.0", default-features = false }
 serde = "1.0.228"
 serde_json = "1.0.145"
 
