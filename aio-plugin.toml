@@ -1,11 +1,26 @@
-[plugin.client]
-path = "client"
+schema_version = 2
 
-[plugin.server]
-path = "server"
+[plugin]
+required_permissions = ["dictionary:manage"]
 
 [plugin.marketplace]
 title = "字典管理"
-summary = "按租户维护字典类型、字典项、排序、启停和默认值。"
+summary = "独立交付的字典类型与字典项管理，支持排序、启停和默认值。"
 license = "MIT"
 tags = ["system", "dictionary", "postgresql"]
+
+[plugin.runtime]
+artifact = "dist/dictionary-server"
+host_version = ">=2026.10.16"
+
+[plugin.runtime.process]
+image = "sha256:48a661b5e5f4560287dfc254e948825538d0f7a1379616495a424ed375afd31f"
+
+[plugin.frontend]
+path = "dist/frontend"
+
+[plugin.database]
+migrations = "server/migrations"
+
+[plugin.capabilities]
+database = true

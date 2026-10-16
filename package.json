@@ -1,0 +1,6 @@
+{
+  "name": "aio-plugin-dictionary",
+  "private": true,
+  "scripts": { "test:ui": "node tests/browser/dictionary.cjs" },
+  "devDependencies": { "playwright": "1.62.0" }
+}

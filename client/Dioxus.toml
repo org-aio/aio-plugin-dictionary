@@ -1,0 +1,7 @@
+[application]
+name = "aio-plugin-dictionary-client"
+default_platform = "web"
+
+[web.app]
+title = "字典管理"
+base_path = "."

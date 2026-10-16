@@ -49,104 +49,54 @@ pub async fn delete_item(item_id: &str) -> Result<(), String> {
     request_empty("DELETE", &format!("/api/dictionaries/items/{item_id}")).await
 }
 
-#[cfg(target_arch = "wasm32")]
 async fn request_json<T, B>(method: &str, path: &str, body: Option<&B>) -> Result<T, String>
 where
     T: DeserializeOwned,
     B: Serialize + ?Sized,
 {
-    let request = match method {
-        "GET" => gloo_net::http::Request::get(path),
-        "POST" => gloo_net::http::Request::post(path),
-        "PUT" => gloo_net::http::Request::put(path),
-        _ => return Err(format!("不支持的请求方法：{method}")),
-    };
-    let request = match body {
-        Some(body) => request.json(body).map_err(|error| error.to_string())?,
-        None => request.build().map_err(|error| error.to_string())?,
-    };
-    let response = request.send().await.map_err(|error| error.to_string())?;
-    if !response.ok() {
-        return Err(decode_error(response.text().await.unwrap_or_default()));
+    let value = request(method, path, body).await?;
+    serde_json::from_value::<DictionaryResponse<T>>(value)
+        .map(|response| response.data)
+        .map_err(|error| error.to_string())
+}
+
+async fn request_empty(method: &str, path: &str) -> Result<(), String> {
+    request::<()>(method, path, None).await?;
+    Ok(())
+}
+
+// 复用宿主注入的 v2 SDK；数据通过消息传递，不把用户输入拼成 JavaScript。
+async fn request<B: Serialize + ?Sized>(
+    method: &str,
+    path: &str,
+    body: Option<&B>,
+) -> Result<serde_json::Value, String> {
+    let mut bridge = dioxus::document::eval(
+        r#"
+        const input = await dioxus.recv();
+        try {
+            const value = await window.aioPlugin.json(input.method, input.path, input.body ?? undefined);
+            dioxus.send({ value });
+        } catch (error) {
+            dioxus.send({ error: String(error.message ?? error) });
+        }
+    "#,
+    );
+    bridge
+        .send(serde_json::json!({ "method": method, "path": path, "body": body }))
+        .map_err(|error| error.to_string())?;
+    let response: serde_json::Value = bridge.recv().await.map_err(|error| error.to_string())?;
+    if let Some(error) = response.get("error").and_then(serde_json::Value::as_str) {
+        return Err(decode_error(error));
     }
     response
-        .json::<DictionaryResponse<T>>()
-        .await
-        .map(|response| response.data)
-        .map_err(|error| error.to_string())
+        .get("value")
+        .cloned()
+        .ok_or_else(|| "宿主未返回字典结果".into())
 }
 
-#[cfg(target_arch = "wasm32")]
-async fn request_empty(method: &str, path: &str) -> Result<(), String> {
-    if method != "DELETE" {
-        return Err(format!("不支持的请求方法：{method}"));
-    }
-    let response = gloo_net::http::Request::delete(path)
-        .send()
-        .await
-        .map_err(|error| error.to_string())?;
-    if response.ok() {
-        Ok(())
-    } else {
-        Err(decode_error(response.text().await.unwrap_or_default()))
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-async fn request_json<T, B>(method: &str, path: &str, body: Option<&B>) -> Result<T, String>
-where
-    T: DeserializeOwned,
-    B: Serialize + ?Sized,
-{
-    let client = reqwest::Client::new();
-    let method =
-        reqwest::Method::from_bytes(method.as_bytes()).map_err(|error| error.to_string())?;
-    let mut request = client.request(method, endpoint(path));
-    if let Ok(cookie) = std::env::var("AIO_SESSION_COOKIE") {
-        request = request.header(reqwest::header::COOKIE, cookie);
-    }
-    if let Some(body) = body {
-        request = request.json(body);
-    }
-    let response = request.send().await.map_err(|error| error.to_string())?;
-    let status = response.status();
-    let bytes = response.bytes().await.map_err(|error| error.to_string())?;
-    if !status.is_success() {
-        return Err(decode_error(String::from_utf8_lossy(&bytes).into_owned()));
-    }
-    serde_json::from_slice::<DictionaryResponse<T>>(&bytes)
-        .map(|response| response.data)
-        .map_err(|error| error.to_string())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-async fn request_empty(method: &str, path: &str) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let method =
-        reqwest::Method::from_bytes(method.as_bytes()).map_err(|error| error.to_string())?;
-    let mut request = client.request(method, endpoint(path));
-    if let Ok(cookie) = std::env::var("AIO_SESSION_COOKIE") {
-        request = request.header(reqwest::header::COOKIE, cookie);
-    }
-    let response = request.send().await.map_err(|error| error.to_string())?;
-    let status = response.status();
-    if status.is_success() {
-        Ok(())
-    } else {
-        let body = response.text().await.unwrap_or_default();
-        Err(decode_error(body))
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn endpoint(path: &str) -> String {
-    let base =
-        std::env::var("AIO_API_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:4173".to_owned());
-    format!("{}{path}", base.trim_end_matches('/'))
-}
-
-fn decode_error(body: String) -> String {
-    serde_json::from_str::<DictionaryErrorResponse>(&body)
+fn decode_error(body: &str) -> String {
+    serde_json::from_str::<DictionaryErrorResponse>(body)
         .map(|response| response.error)
-        .unwrap_or(body)
+        .unwrap_or_else(|_| body.to_owned())
 }

@@ -1,5 +1,3 @@
-use std::env;
-
 use aio_plugin_dictionary_model::{
     CreateDictionaryItemRequest, CreateDictionaryTypeRequest, DictionaryItem, DictionaryType,
     DictionaryView, UpdateDictionaryItemRequest, UpdateDictionaryTypeRequest,
@@ -15,41 +13,6 @@ use super::{
     util::{validate_item, validate_type},
 };
 
-const SCHEMA: &str = r#"
-CREATE TABLE IF NOT EXISTS dictionary_types (
-    tenant_id TEXT NOT NULL,
-    id TEXT NOT NULL,
-    code TEXT NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (tenant_id, id),
-    UNIQUE (tenant_id, code)
-);
-CREATE TABLE IF NOT EXISTS dictionary_items (
-    tenant_id TEXT NOT NULL,
-    id TEXT NOT NULL,
-    type_id TEXT NOT NULL,
-    value TEXT NOT NULL,
-    label TEXT NOT NULL,
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    is_default BOOLEAN NOT NULL DEFAULT FALSE,
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (tenant_id, id),
-    UNIQUE (tenant_id, type_id, value),
-    FOREIGN KEY (tenant_id, type_id)
-        REFERENCES dictionary_types (tenant_id, id)
-        ON DELETE CASCADE
-);
-CREATE UNIQUE INDEX IF NOT EXISTS dictionary_items_one_default
-    ON dictionary_items (tenant_id, type_id)
-    WHERE is_default;
-"#;
-
 #[derive(Debug)]
 pub struct PostgresDictionaryService {
     pool: PgPool,
@@ -61,20 +24,26 @@ impl PostgresDictionaryService {
         self.pool.close().await;
     }
 
-    pub fn from_env() -> Result<Self> {
-        let database_url = env::var("AIO_DATABASE_URL")
-            .or_else(|_| env::var("AZ_AIO_DATABASE_URL"))
-            .context("字典插件缺少 AIO_DATABASE_URL")?;
-        Self::from_database_url(&database_url)
-    }
-
     pub fn from_database_url(database_url: &str) -> Result<Self> {
         Ok(Self {
             pool: PgPoolOptions::new()
-                .max_connections(8)
+                .max_connections(4)
                 .connect_lazy(database_url)
                 .context("创建字典数据库连接池失败")?,
         })
+    }
+
+    /// 进程启动只验证宿主预置的结构及受限角色，不自行创建业务表。
+    pub async fn verify_host_database(&self, tenant: &str) -> Result<()> {
+        let safe: bool = sqlx::query_scalar(
+            "SELECT NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolbypassrls) AND current_schema() ~ '^p_[a-f0-9]+$' AND NOT has_schema_privilege(current_user, current_schema(), 'CREATE') FROM pg_roles WHERE rolname=current_user",
+        ).fetch_one(&self.pool).await?;
+        ensure!(safe, "字典进程必须使用宿主发放的受限数据库角色");
+        let other_tenants: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM dictionary_types WHERE tenant_id<>$1 UNION ALL SELECT 1 FROM dictionary_items WHERE tenant_id<>$1)",
+        ).bind(tenant).fetch_one(&self.pool).await.context("宿主字典结构未就绪")?;
+        ensure!(!other_tenants, "数据库包含其他租户数据");
+        Ok(())
     }
 
     async fn ensure_type(&self, tenant_id: &str, type_id: &str) -> Result<()> {
@@ -93,14 +62,6 @@ impl PostgresDictionaryService {
 
 #[async_trait]
 impl DictionaryService for PostgresDictionaryService {
-    async fn initialize(&self) -> Result<()> {
-        sqlx::raw_sql(SCHEMA)
-            .execute(&self.pool)
-            .await
-            .context("创建字典插件数据表失败")?;
-        Ok(())
-    }
-
     async fn view(&self, tenant_id: &str) -> Result<DictionaryView> {
         let type_rows = sqlx::query_as::<_, (String, String, String, String, bool)>(
             "SELECT id, code, name, description, enabled FROM dictionary_types WHERE tenant_id = $1 ORDER BY name, code",
@@ -368,12 +329,13 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "需要隔离的测试 PostgreSQL"]
     async fn persists_crud_with_tenant_isolation_and_single_default() -> Result<()> {
-        let Ok(database_url) = env::var("AIO_TEST_DATABASE_URL") else {
-            return Ok(());
-        };
+        let database_url = std::env::var("AIO_TEST_DATABASE_URL")?;
         let service = PostgresDictionaryService::from_database_url(&database_url)?;
-        service.initialize().await?;
+        sqlx::raw_sql(include_str!("../../../migrations/001_dictionary.sql"))
+            .execute(&service.pool)
+            .await?;
         let tenant = format!("dictionary-test-{}", Uuid::new_v4().simple());
         let other_tenant = format!("dictionary-test-{}", Uuid::new_v4().simple());
         let dictionary_type = service

@@ -6,19 +6,10 @@ mod util;
 
 use anyhow::{Context as _, Result};
 use axum::Router;
-use dill::CatalogBuilder;
 
 pub use controller::DictionaryController;
 pub use service::DictionaryService;
 pub use service_impl::PostgresDictionaryService;
-
-pub(crate) fn register(builder: &mut CatalogBuilder) -> Result<()> {
-    builder
-        .add_value(PostgresDictionaryService::from_env()?)
-        .bind::<dyn DictionaryService, PostgresDictionaryService>()
-        .add::<controller::DictionaryController>();
-    Ok(())
-}
 
 pub(crate) fn router(catalog: &dill::Catalog) -> Result<Router> {
     let controller = catalog

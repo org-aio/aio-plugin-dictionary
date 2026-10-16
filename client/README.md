@@ -1,5 +1,5 @@
 # 字典客户端
 
-向 AIO 的系统场景贡献字典管理树菜单页面。页面使用共享 UI 组件展示字典类型和字典项，所有新增、编辑与删除操作通过按需挂载的 Dialog 完成。
+`main.rs` 独立启动既有 Dioxus 字典页面，在运行时的 v2 iframe 中加载。共享 `UiStylesheets { relative_paths: true }` 负责样式顺序；`scripts/package-frontend.mjs` 保留 DX 已处理的 JS/Wasm 和资源，确保路径相对于当前挂载版本。
 
-Web 请求使用宿主同源地址；Desktop 请求使用 `AIO_API_BASE_URL`，并可通过 `AIO_SESSION_COOKIE` 注入已建立的宿主会话。
+`dictionary/http.rs` 通过 Dioxus 消息 API 调用宿主注入的 `aioPlugin.json`，不拼接用户输入、不读取会话 Cookie、不创建第二套请求桥。页面复用共享 UI 的表格、集合树和对话框。页面描述来自同包服务端 `/aio/describe`，无需产品静态注册。

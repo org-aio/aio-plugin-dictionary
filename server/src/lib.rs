@@ -1,25 +1,14 @@
 #![forbid(unsafe_code)]
 
 mod generated;
-
-use anyhow::{Context as _, Result};
-use axum::Router;
-use dill::CatalogBuilder;
+pub mod hosting;
+pub mod migration;
 
 pub use generated::dictionary::{
     DictionaryController, DictionaryService, PostgresDictionaryService,
 };
 
-pub fn register(builder: &mut CatalogBuilder) -> Result<()> {
-    generated::dictionary::register(builder)
-}
-
-pub fn service(catalog: &dill::Catalog) -> Result<std::sync::Arc<dyn DictionaryService>> {
-    catalog
-        .get_one::<dyn DictionaryService>()
-        .context("字典服务未注册")
-}
-
-pub fn router(catalog: &dill::Catalog) -> Result<Router> {
+/// 将现有 Controller 装配到进程的同一个 Dill 容器。
+pub fn router(catalog: &dill::Catalog) -> anyhow::Result<axum::Router> {
     generated::dictionary::router(catalog)
 }

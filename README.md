@@ -1,34 +1,40 @@
-# AIO 字典插件 / AIO Dictionary Plugin
+# AIO 字典插件
 
-面向 AIO 系统场景的租户级字典管理插件。一个 Git 仓库内聚 Dioxus 客户端、PostgreSQL 服务端和共享请求模型，通过 Dill 按具体 Rust 类型装配。
+独立交付的 v2 整包：同一仓库提供 Dioxus 页面、原生 Rust Sidecar 和 PostgreSQL 迁移。安装后由运行时贡献“系统 / 字典管理”，升级、回滚、停用和卸载均无需重编 `aio-idea`。宿主不再链接字典客户端或服务端实现。
 
-A tenant-level dictionary management plugin for AIO system scenarios. One Git repository hosts the Dioxus client, PostgreSQL server and shared request models, wired by Dill through concrete Rust types.
+所有入口要求宿主角色权限 `dictionary:manage`；安装包本身不授予此权限。页面发现、挂载、资源和业务请求复用运行时的实时权限检查。进程只接受 `az-plugin-process` 验证后的调用身份，使用宿主发放的租户隔离数据库角色，不依赖产品身份实现。
 
-导航位置为 `系统 / 系统管理 / 字典管理`，访问与写操作均要求 `dictionary:manage` 权限。
+## 阅读顺序
 
-Navigation: `系统 / 系统管理 / 字典管理` (System / System Admin / Dictionary Management). Both read and write operations require the `dictionary:manage` permission.
+1. `aio-plugin.toml`：运行目标、前端目录、权限和数据库迁移声明。
+2. `server/src/hosting.rs`：一个 Dill 容器装配现有 Controller/Service，监听监督器 Unix socket。
+3. `client/src/main.rs`：共享样式和字典页面；请求通过宿主 `aioPlugin.json`。
+4. [构建、测试和迁移](tests/README.md)：独立交付验收及旧宿主切换步骤。
 
-## 目录 / Layout
+`model` 保存共享 DTO；`server/src/generated/dictionary` 保存既有校验、事务与 CRUD；`client/src/dictionary` 保存类型选择、表格和按需打开的增删改对话框。没有第二套业务实现或请求桥。
 
-- `client`：字典类型集合、字典项表格及增删改 Dialog。
-- `model`：前后端共享且与框架无关的 DTO。
-- `server`：租户隔离的 PostgreSQL CRUD 与鉴权路由。
+## 构建与发布
 
-- `client`: dictionary type collections, dictionary item tables and add/edit/delete dialogs.
-- `model`: framework-agnostic DTOs shared between the frontend and backend.
-- `server`: tenant-isolated PostgreSQL CRUD and authenticated routes.
+使用仓库固定的 Rust nightly、Dioxus CLI 0.7.9、Node 22+、Zig 0.16.0、cargo-zigbuild 0.23.4。平台 `delivery/images/rust-process.Dockerfile` 提供组合工具环境，配置到构建服务的 `AIO_BUILD_IMAGE_RUST`。
 
-## 接口 / API
+```sh
+sh scripts/build.sh --process
+aio plugin validate .
+aio plugin package . --git https://github.com/org-aio/aio-plugin-dictionary.git --version 0.1.0 -o dictionary.aio-plugin
+```
+
+脚本生成 `dist/dictionary-server`、`dist/dictionary-migrate` 和 `dist/frontend`。前端保留 DX 处理后的资源映射，仅将启动资源地址改为挂载路径下的相对地址；不能对 Cargo 原始 Wasm 重新执行 wasm-bindgen，也不能把共享 CSS 按文件名拼接。迁移工具供部署者使用，不作为插件运行入口。
+
+发布者通过正式二进制发布接口上传包，经运行时校验后在插件市场按租户安装。`aio-delivery.toml` 声明相同构建命令；仓库 push、CI 通过、市场发布和租户激活是不同状态。运行环境必须允许清单固定的进程镜像，并提供进程监督器及受限数据库代理。不要把本包加入仅支持旧版发现的默认 Git 组合。
+
+## 业务接口
+
+以下路径位于 Sidecar 内部，经宿主受控桥访问；宿主根路径不注册字典 API：
 
 - `GET /api/dictionaries`
 - `POST /api/dictionaries/types`
-- `PUT /api/dictionaries/types/{type_id}`
-- `DELETE /api/dictionaries/types/{type_id}`
+- `PUT|DELETE /api/dictionaries/types/{type_id}`
 - `POST /api/dictionaries/items`
-- `PUT /api/dictionaries/items/{item_id}`
-- `DELETE /api/dictionaries/items/{item_id}`
-- `GET /api/plugins/dictionary/health`
+- `PUT|DELETE /api/dictionaries/items/{item_id}`
 
-宿主从会话注入当前租户，客户端不能提交或覆盖 `tenant_id`。每个租户内类型编码唯一，每种类型最多一个默认字典项，删除类型会级联删除其字典项。
-
-The host injects the current tenant from the session; the client cannot submit or override `tenant_id`. Type codes are unique within each tenant, each type has at most one default item, and deleting a type cascades to its dictionary items.
+租户取自可信调用上下文。类型编码在租户内唯一，每种类型最多一个默认项；删除类型级联删除其字典项。停用、重启和回滚保留数据；版本回滚不逆向执行数据库迁移。

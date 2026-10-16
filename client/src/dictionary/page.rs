@@ -19,7 +19,7 @@ use dioxus::prelude::*;
 use dioxus_icons::lucide::{Check, Minus, Pencil, Plus, RefreshCw, Trash2};
 
 #[allow(non_snake_case)]
-pub(crate) fn DictionaryPage() -> Element {
+pub fn DictionaryPage() -> Element {
     let mut revision = use_signal(|| 0_u64);
     let dictionaries = use_resource(move || {
         let _ = revision();

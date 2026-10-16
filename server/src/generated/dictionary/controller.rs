@@ -5,14 +5,14 @@ use aio_plugin_dictionary_model::{
     DictionaryItem, DictionaryResponse, DictionaryType, DictionaryView,
     UpdateDictionaryItemRequest, UpdateDictionaryTypeRequest,
 };
-use aio_plugin_identity_server::{IdentityService, SessionContext};
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post, put},
 };
+use az_plugin_process::Caller;
 
 use super::service::DictionaryService;
 
@@ -20,7 +20,6 @@ use super::service::DictionaryService;
 #[dill::scope(dill::Singleton)]
 pub struct DictionaryController {
     service: Arc<dyn DictionaryService>,
-    identity: Arc<IdentityService>,
 }
 
 pub(super) fn router(controller: Arc<DictionaryController>) -> Router {
@@ -46,9 +45,8 @@ async fn health() -> &'static str {
 
 async fn view(
     State(controller): State<Arc<DictionaryController>>,
-    headers: HeaderMap,
+    Extension(session): Extension<Caller>,
 ) -> Result<Json<DictionaryResponse<DictionaryView>>, DictionaryHttpError> {
-    let session = controller.authenticate(&headers).await?;
     Ok(Json(DictionaryResponse {
         data: controller.service.view(&session.tenant_id).await?,
     }))
@@ -56,10 +54,9 @@ async fn view(
 
 async fn create_type(
     State(controller): State<Arc<DictionaryController>>,
-    headers: HeaderMap,
+    Extension(session): Extension<Caller>,
     Json(request): Json<CreateDictionaryTypeRequest>,
 ) -> Result<(StatusCode, Json<DictionaryResponse<DictionaryType>>), DictionaryHttpError> {
-    let session = controller.authenticate(&headers).await?;
     let value = controller
         .service
         .create_type(&session.tenant_id, request)
@@ -72,11 +69,10 @@ async fn create_type(
 
 async fn update_type(
     State(controller): State<Arc<DictionaryController>>,
-    headers: HeaderMap,
+    Extension(session): Extension<Caller>,
     Path(type_id): Path<String>,
     Json(request): Json<UpdateDictionaryTypeRequest>,
 ) -> Result<Json<DictionaryResponse<DictionaryType>>, DictionaryHttpError> {
-    let session = controller.authenticate(&headers).await?;
     let value = controller
         .service
         .update_type(&session.tenant_id, &type_id, request)
@@ -86,10 +82,9 @@ async fn update_type(
 
 async fn delete_type(
     State(controller): State<Arc<DictionaryController>>,
-    headers: HeaderMap,
+    Extension(session): Extension<Caller>,
     Path(type_id): Path<String>,
 ) -> Result<StatusCode, DictionaryHttpError> {
-    let session = controller.authenticate(&headers).await?;
     controller
         .service
         .delete_type(&session.tenant_id, &type_id)
@@ -99,10 +94,9 @@ async fn delete_type(
 
 async fn create_item(
     State(controller): State<Arc<DictionaryController>>,
-    headers: HeaderMap,
+    Extension(session): Extension<Caller>,
     Json(request): Json<CreateDictionaryItemRequest>,
 ) -> Result<(StatusCode, Json<DictionaryResponse<DictionaryItem>>), DictionaryHttpError> {
-    let session = controller.authenticate(&headers).await?;
     let value = controller
         .service
         .create_item(&session.tenant_id, request)
@@ -115,11 +109,10 @@ async fn create_item(
 
 async fn update_item(
     State(controller): State<Arc<DictionaryController>>,
-    headers: HeaderMap,
+    Extension(session): Extension<Caller>,
     Path(item_id): Path<String>,
     Json(request): Json<UpdateDictionaryItemRequest>,
 ) -> Result<Json<DictionaryResponse<DictionaryItem>>, DictionaryHttpError> {
-    let session = controller.authenticate(&headers).await?;
     let value = controller
         .service
         .update_item(&session.tenant_id, &item_id, request)
@@ -129,37 +122,14 @@ async fn update_item(
 
 async fn delete_item(
     State(controller): State<Arc<DictionaryController>>,
-    headers: HeaderMap,
+    Extension(session): Extension<Caller>,
     Path(item_id): Path<String>,
 ) -> Result<StatusCode, DictionaryHttpError> {
-    let session = controller.authenticate(&headers).await?;
     controller
         .service
         .delete_item(&session.tenant_id, &item_id)
         .await?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-impl DictionaryController {
-    async fn authenticate(
-        &self,
-        headers: &HeaderMap,
-    ) -> Result<SessionContext, DictionaryHttpError> {
-        let session = self.identity.authenticate(headers).await?.ok_or_else(|| {
-            DictionaryHttpError::new(StatusCode::UNAUTHORIZED, "会话无效或已过期")
-        })?;
-        if !session
-            .permissions
-            .iter()
-            .any(|permission| permission == "dictionary:manage")
-        {
-            return Err(DictionaryHttpError::new(
-                StatusCode::FORBIDDEN,
-                "当前角色没有字典管理权限",
-            ));
-        }
-        Ok(session)
-    }
 }
 
 struct DictionaryHttpError {

@@ -7,7 +7,6 @@ use async_trait::async_trait;
 
 #[async_trait]
 pub trait DictionaryService: std::any::Any + Send + Sync {
-    async fn initialize(&self) -> Result<()>;
     async fn view(&self, tenant_id: &str) -> Result<DictionaryView>;
     async fn create_type(
         &self,
