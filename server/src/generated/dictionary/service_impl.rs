@@ -56,6 +56,11 @@ pub struct PostgresDictionaryService {
 }
 
 impl PostgresDictionaryService {
+    /// 停止本代服务，等待在途数据库操作归还连接；字典数据保持不变。
+    pub async fn shutdown(&self) {
+        self.pool.close().await;
+    }
+
     pub fn from_env() -> Result<Self> {
         let database_url = env::var("AIO_DATABASE_URL")
             .or_else(|_| env::var("AZ_AIO_DATABASE_URL"))

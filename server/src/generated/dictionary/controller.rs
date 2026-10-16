@@ -18,7 +18,7 @@ use super::service::DictionaryService;
 
 #[dill::component]
 #[dill::scope(dill::Singleton)]
-pub(super) struct DictionaryController {
+pub struct DictionaryController {
     service: Arc<dyn DictionaryService>,
     identity: Arc<IdentityService>,
 }

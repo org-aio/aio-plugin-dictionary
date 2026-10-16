@@ -8,6 +8,7 @@ use anyhow::{Context as _, Result};
 use axum::Router;
 use dill::CatalogBuilder;
 
+pub use controller::DictionaryController;
 pub use service::DictionaryService;
 pub use service_impl::PostgresDictionaryService;
 

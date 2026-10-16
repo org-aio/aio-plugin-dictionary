@@ -6,7 +6,9 @@ use anyhow::{Context as _, Result};
 use axum::Router;
 use dill::CatalogBuilder;
 
-pub use generated::dictionary::{DictionaryService, PostgresDictionaryService};
+pub use generated::dictionary::{
+    DictionaryController, DictionaryService, PostgresDictionaryService,
+};
 
 pub fn register(builder: &mut CatalogBuilder) -> Result<()> {
     generated::dictionary::register(builder)
